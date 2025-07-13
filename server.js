@@ -25,12 +25,34 @@ fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data)
 });
 
 // --- Middleware Setup ---
-app.use(cors());
-app.use(express.json());
+// Configure CORS to allow requests from your Netlify frontend
+const allowedOrigins = [
+    'hhttps://chatithmypoetrybook.netlify.app/', // <--- IMPORTANT: REPLACE THIS WITH YOUR ACTUAL NETLIFY URL (e.g., https://my-poetry-app.netlify.app)
+    'http://localhost:3000', // For local React development
+    // Add any other domains that need to access your API
+];
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, // If you're sending cookies or authorization headers
+    optionsSuccessStatus: 204 // Some legacy browsers (IE11, various SmartTVs) choke on 200
+};
+
+app.use(cors(corsOptions)); // Use CORS with your defined options
+app.use(express.json()); // To parse JSON request bodies
 
 // --- API Endpoint for Chatbot Interaction ---
 app.post('/api/chat', async (req, res) => {
-    const userQuery = req.body.query;
+    const userQuery = req.body.query; // Assuming the React frontend sends { query: "user message" }
 
     if (!userQuery) {
         return res.status(400).json({ error: 'Query is required in the request body.' });
@@ -115,8 +137,11 @@ Only suggest buttons for topics that can be directly queried and fully answered 
 });
 
 // --- Serve Static React Files in Production ---
+// This part assumes your React build output is in '../frontend/build' relative to server.js
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));
+
+    // For any other requests, serve the React app's index.html
     app.get('*', (req, res) => {
         res.sendFile(path.resolve(__dirname, '../frontend/build', 'index.html'));
     });
@@ -125,8 +150,11 @@ if (process.env.NODE_ENV === 'production') {
 // --- Start the Server ---
 app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
-    console.log(`Access backend at http://localhost:${port}`);
+    // REMOVED: console.log(`Access backend at http://localhost:${port}`);
     if (process.env.NODE_ENV !== 'production') {
-        console.log('Ensure your React app is configured to proxy API requests to this server.');
+        console.log('Ensure your React app is configured to proxy API requests to this server (e.g., via a proxy in package.json or direct API_URL).');
+    } else {
+        console.log(`Backend server is running in production mode on port ${port}.`);
+        console.log('It should be accessible via your Render service URL.');
     }
 });
