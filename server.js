@@ -5,11 +5,11 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
-require('dotenv').config();
+require('dotenv').config(); // Load .env variables (for local development)
 
 // Initialize the Express application
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5000; // Render will provide process.env.PORT
 
 let poetryBookContent = ''; // Variable to store the poetry book content
 
@@ -18,6 +18,7 @@ fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data)
     if (err) {
         console.error('Error reading poetry_book.txt:', err);
         console.error('CRITICAL: poetry_book.txt could not be loaded. Chatbot will not function correctly.');
+        // In a production environment, you might want a more graceful failure or retry mechanism
         process.exit(1); // Exit if the essential 'book' content cannot be loaded
     }
     poetryBookContent = data;
@@ -27,7 +28,7 @@ fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data)
 // --- Middleware Setup ---
 // Configure CORS to allow requests from your Netlify frontend
 const allowedOrigins = [
-    'https://chatithmypoetrybook.netlify.app/', // <--- IMPORTANT: REPLACE THIS WITH YOUR ACTUAL NETLIFY URL (e.g., https://my-poetry-app.netlify.app)
+    'https://chatithmypoetrybook.netlify.app', // <<<--- CRITICAL FIX: REMOVED TRAILING SLASH
     'http://localhost:3000', // For local React development
     // Add any other domains that need to access your API
 ];
@@ -35,9 +36,10 @@ const allowedOrigins = [
 const corsOptions = {
     origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl requests)
+        // This is important for some tools or direct API calls without an Origin header
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
             return callback(new Error(msg), false);
         }
         return callback(null, true);
@@ -150,11 +152,14 @@ if (process.env.NODE_ENV === 'production') {
 // --- Start the Server ---
 app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
-    // REMOVED: console.log(`Access backend at http://localhost:${port}`);
-    if (process.env.NODE_ENV !== 'production') {
+    // Use process.env.RENDER to detect Render environment more reliably
+    if (process.env.RENDER) {
+        console.log(`Backend server is running on Render. It should be accessible via your Render service URL.`);
+    } else if (process.env.NODE_ENV !== 'production') {
+        console.log(`Access backend at http://localhost:${port}`);
         console.log('Ensure your React app is configured to proxy API requests to this server (e.g., via a proxy in package.json or direct API_URL).');
     } else {
         console.log(`Backend server is running in production mode on port ${port}.`);
-        console.log('It should be accessible via your Render service URL.');
+        console.log('It should be accessible via its public URL.');
     }
 });
