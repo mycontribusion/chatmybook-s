@@ -1,5 +1,3 @@
-// server.js
-
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -9,41 +7,28 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-let poetryBookContent = '';
+// ✅ Updated CORS Middleware
+app.use(cors({
+  origin: 'https://chatwithmypoetrybook.netlify.app', // Replace with your Netlify domain
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'Content-Type', 'Accept', 'Authorization', 'X-Requested-With'],
+  credentials: true
+}));
 
+app.use(express.json());
+
+// ✅ Load poetry book once at startup
+let poetryBookContent = '';
 fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data) => {
   if (err) {
     console.error('Error reading poetry_book.txt:', err);
     process.exit(1);
   }
   poetryBookContent = data;
-  console.log('poetry_book.txt loaded successfully.');
+  console.log('📖 poetry_book.txt loaded successfully.');
 });
 
-// --- FIXED CORS ---
-const allowedOrigins = [
-  'https://chatwithmypoetrybook.netlify.app',
-  'http://localhost:3000'
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS policy does not allow origin: ${origin}`), false);
-    }
-  },
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  credentials: true,
-  optionsSuccessStatus: 204
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // ✅ Handle preflight requests
-
-app.use(express.json());
-
+// ✅ AI Chat Route
 app.post('/api/chat', async (req, res) => {
   const userQuery = req.body.query;
 
@@ -81,9 +66,8 @@ Only suggest buttons for topics that can be directly queried and fully answered 
   };
 
   const geminiApiKey = process.env.GEMINI_API_KEY;
-
   if (!geminiApiKey) {
-    return res.status(500).json({ error: 'Server configuration error: API key missing.' });
+    return res.status(500).json({ error: 'Server configuration error: GEMINI_API_KEY missing.' });
   }
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
@@ -102,8 +86,7 @@ Only suggest buttons for topics that can be directly queried and fully answered 
     }
 
     const result = await response.json();
-    const aiResponseText =
-      result.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI.";
+    const aiResponseText = result?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI.";
 
     res.json({ response: aiResponseText });
   } catch (error) {
@@ -112,7 +95,7 @@ Only suggest buttons for topics that can be directly queried and fully answered 
   }
 });
 
-// Serve static files from React frontend in production
+// ✅ Serve frontend in production (optional, for fullstack deployment)
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../frontend/build')));
   app.get('*', (req, res) => {
@@ -121,5 +104,5 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });
