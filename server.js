@@ -27,7 +27,7 @@ fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data)
 // --- Middleware Setup ---
 // Configure CORS to allow requests from your Netlify frontend
 const allowedOrigins = [
-    'hhttps://chatithmypoetrybook.netlify.app/', // <--- IMPORTANT: REPLACE THIS WITH YOUR ACTUAL NETLIFY URL (e.g., https://my-poetry-app.netlify.app)
+    'https://chatithmypoetrybook.netlify.app/', // <--- IMPORTANT: REPLACE THIS WITH YOUR ACTUAL NETLIFY URL (e.g., https://my-poetry-app.netlify.app)
     'http://localhost:3000', // For local React development
     // Add any other domains that need to access your API
 ];
