@@ -1,72 +1,70 @@
 // server.js
 
-// Import necessary modules
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
-require('dotenv').config(); // Load .env variables (for local development)
+require('dotenv').config();
 
-// Initialize the Express application
 const app = express();
-const port = process.env.PORT || 5000; // Render will provide process.env.PORT
+const port = process.env.PORT || 5000;
 
-let poetryBookContent = ''; // Variable to store the poetry book content
+let poetryBookContent = '';
 
-// --- File System Read for poetry_book.txt ---
-fs.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8', (err, data) => {
-    if (err) {
+// --- Read Poetry Book Content Asynchronously ---
+(async () => {
+    try {
+        const data = await fs.promises.readFile(path.join(__dirname, 'data', 'poetry_book.txt'), 'utf8');
+        poetryBookContent = data.trim(); // Trim extra whitespace
+        console.log('poetry_book.txt loaded successfully.');
+    } catch (err) {
         console.error('Error reading poetry_book.txt:', err);
-        console.error('CRITICAL: poetry_book.txt could not be loaded. Chatbot will not function correctly.');
-        // In a production environment, you might want a more graceful failure or retry mechanism
-        process.exit(1); // Exit if the essential 'book' content cannot be loaded
+        console.error('CRITICAL: poetry_book.txt could not be loaded.');
+        process.exit(1);
     }
-    poetryBookContent = data;
-    console.log('poetry_book.txt loaded successfully.');
-});
+})();
 
-// --- Middleware Setup ---
-// Configure CORS to allow requests from your Netlify frontend
+// --- CORS Setup ---
 const allowedOrigins = [
-    'https://chatithmypoetrybook.netlify.app', // <<<--- CRITICAL FIX: REMOVED TRAILING SLASH
-    'http://localhost:3000', // For local React development
-    // Add any other domains that need to access your API
+    'https://chatithmypoetrybook.netlify.app',
+    'http://localhost:3000',
 ];
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        // This is important for some tools or direct API calls without an Origin header
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-            return callback(new Error(msg), false);
+        console.log('CORS request from origin:', origin);
+        if (!origin) return callback(null, true); // Allow non-browser tools
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
         }
-        return callback(null, true);
+        const msg = `CORS policy: Access from origin ${origin} not allowed.`;
+        console.error(msg);
+        return callback(new Error(msg), false);
     },
+    credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // If you're sending cookies or authorization headers
-    optionsSuccessStatus: 204 // Some legacy browsers (IE11, various SmartTVs) choke on 200
+    optionsSuccessStatus: 204
 };
 
-app.use(cors(corsOptions)); // Use CORS with your defined options
-app.use(express.json()); // To parse JSON request bodies
+app.use(cors(corsOptions));
+app.use(express.json());
 
-// --- API Endpoint for Chatbot Interaction ---
+// --- Explicit Preflight Handler ---
+app.options('/api/chat', cors(corsOptions));
+
+// --- Chat Endpoint ---
 app.post('/api/chat', async (req, res) => {
-    const userQuery = req.body.query; // Assuming the React frontend sends { query: "user message" }
+    const userQuery = req.body.query;
 
     if (!userQuery) {
         return res.status(400).json({ error: 'Query is required in the request body.' });
     }
 
     if (!poetryBookContent) {
-        console.error('Attempted AI query before poetry book content was loaded.');
-        return res.status(500).json({ error: 'Poetry book content not loaded on server. Please try again in a moment or check server logs.' });
+        console.error('Poetry content not yet loaded.');
+        return res.status(500).json({ error: 'Poetry book not loaded yet. Try again shortly.' });
     }
 
-    // --- Construct the Prompt for the AI ---
-    // Instructions for AI to discuss poetry and generate relevant buttons.
     const promptInstructions = `
 Based *only* on the following poetry book content, discuss the user's query.
 Focus on themes, imagery, poetic style, or specific poems/stanzas as they appear in the text.
@@ -80,14 +78,12 @@ If your response discusses a specific poem or a clearly defined section/theme (e
 Prefix these with "BUTTONS: " and separate them with commas. For example: "BUTTONS: Poem 1: Echoes of Dawn, Themes Explored".
 Only suggest buttons for topics that can be directly queried and fully answered from the *exact phrases* found in the document. Do not invent new topics for buttons.`;
 
-
     const finalPrompt = `${promptInstructions}\n\nUser's query: "${userQuery}"`;
 
-    // --- Prepare Payload for Gemini API ---
     const payload = {
         contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
         generationConfig: {
-            temperature: 0.5, // Slightly higher temperature for more creative/interpretive responses for poetry
+            temperature: 0.5,
             topP: 0.9,
             topK: 40,
             maxOutputTokens: 1000,
@@ -97,8 +93,8 @@ Only suggest buttons for topics that can be directly queried and fully answered 
     const geminiApiKey = process.env.GEMINI_API_KEY;
 
     if (!geminiApiKey) {
-        console.error('GEMINI_API_KEY is not set in environment variables. Please check your .env file.');
-        return res.status(500).json({ error: 'Server configuration error: API key missing.' });
+        console.error('GEMINI_API_KEY is missing.');
+        return res.status(500).json({ error: 'Server configuration error: Missing API key.' });
     }
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
@@ -112,54 +108,49 @@ Only suggest buttons for topics that can be directly queried and fully answered 
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`Gemini API returned an error status: ${response.status} ${response.statusText}`);
-            console.error('Gemini API Error Body:', errorText);
-            return res.status(500).json({ error: `Gemini API error: ${response.statusText || 'Unknown error'}. See server logs for details.` });
+            console.error(`Gemini API error: ${response.status} ${response.statusText}`);
+            console.error('Response body:', errorText);
+            return res.status(500).json({ error: `Gemini API error: ${response.statusText}` });
         }
 
         const result = await response.json();
 
-        if (result.candidates && result.candidates.length > 0 &&
-            result.candidates[0].content && result.candidates[0].content.parts &&
-            result.candidates[0].content.parts.length > 0) {
+        if (
+            result.candidates &&
+            result.candidates[0]?.content?.parts?.[0]?.text
+        ) {
             const aiResponseText = result.candidates[0].content.parts[0].text;
             res.json({ response: aiResponseText });
         } else {
-            console.error('Unexpected AI response structure. No candidates or content found:', JSON.stringify(result, null, 2));
-            res.status(500).json({ error: "Failed to get a valid response from the AI. Unexpected structure." });
+            console.error('Unexpected AI response structure:', result);
+            res.status(500).json({ error: "Invalid AI response structure." });
         }
     } catch (error) {
-        console.error("Error calling Gemini API from backend:", error);
-        if (error.cause && error.cause.code === 'ETIMEDOUT') {
-            res.status(500).json({ error: "Network timeout when connecting to AI. Check server's internet or firewall." });
-        } else {
-            res.status(500).json({ error: "Backend server error during AI interaction. Please check server logs." });
-        }
+        console.error('Gemini API call failed:', error);
+        res.status(500).json({ error: "Server error during AI call." });
     }
 });
 
-// --- Serve Static React Files in Production ---
-// This part assumes your React build output is in '../frontend/build' relative to server.js
+// --- React Build Serving ---
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/build')));
 
-    // For any other requests, serve the React app's index.html
     app.get('*', (req, res) => {
         res.sendFile(path.resolve(__dirname, '../frontend/build', 'index.html'));
     });
 }
 
-// --- Start the Server ---
+// --- Health Check (optional) ---
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', poetryLoaded: !!poetryBookContent });
+});
+
+// --- Start Server ---
 app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
-    // Use process.env.RENDER to detect Render environment more reliably
     if (process.env.RENDER) {
-        console.log(`Backend server is running on Render. It should be accessible via your Render service URL.`);
-    } else if (process.env.NODE_ENV !== 'production') {
-        console.log(`Access backend at http://localhost:${port}`);
-        console.log('Ensure your React app is configured to proxy API requests to this server (e.g., via a proxy in package.json or direct API_URL).');
+        console.log('Running on Render platform.');
     } else {
-        console.log(`Backend server is running in production mode on port ${port}.`);
-        console.log('It should be accessible via its public URL.');
+        console.log(`Access at http://localhost:${port}`);
     }
 });
